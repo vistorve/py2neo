@@ -144,6 +144,23 @@ class GraphDatabaseService(rest.Resource):
 			])
 		]
 
+	def bulk_set_properties(self, node_to_property_map):
+		"""
+		Sets the properties to many nodes in one batch request.
+
+		@param node_to_property_map: dictionary mapping node._uri to its new properties.
+		"""
+
+		self._post(self._batch_uri, [
+				{
+					'method': 'PUT',
+					'to': node_uri + "/properties",
+					'body': properties
+				}
+				for node_uri, properties in node_to_property_map.iteritems()
+			   ])
+		
+
 	def create_relationships(self, *descriptors):
 		"""
 		Creates new C{Relationships} based on the supplied C{descriptors} as
@@ -200,6 +217,19 @@ class GraphDatabaseService(rest.Resource):
 					'id': i
 				}
 				for i in range(len(resources))
+			])
+		]
+
+	def get_properties_by_uri(self, *resources):
+		return [
+			result['body']['data']
+			for result in self._post(self._batch_uri, [
+					{
+						'method': 'GET',
+						'to': "".join(resources[i].partition("/node")[1:]),
+						'id': i
+					}
+					for i in xrange(len(resources))
 			])
 		]
 
@@ -446,6 +476,9 @@ class IndexableResource(rest.Resource):
 		"""
 		self._delete(self._lookup('property').format(key=key))
 
+	def __hash__(self):
+		return hash(self._lookup('uri'))
+
 	def get_properties(self):
 		"""
 		Returns all properties for this resource.
@@ -647,7 +680,7 @@ class Node(IndexableResource):
 				else:
 					td = td.relationships(*relationship)
 		if prune:
-			td = td.prune(prune[0], prune[1])
+			td = td.prune_evaluator(prune[0], prune[1])
 		if filter:
 			td = td.filter(filter[0], filter[1])
 		if max_depth:
@@ -745,6 +778,13 @@ class Relationship(IndexableResource):
 		
 		"""
 		return Node(self._lookup('end'), http=self._http)
+
+	def get_start_end_node_uris(self):
+		"""
+		Returns the uris for the start and end node in a two tuple.
+		"""
+
+		return (self._lookup('start'), self._lookup('end'))
 
 	def get_other_node(self, node):
 		"""
@@ -1191,6 +1231,17 @@ class Traverser(rest.Resource):
 		]
 
 	@property
+	def nodes_by_uri(self):
+		return [
+			node['self']
+			for node in self._post(
+				self._template_uri.format(returnType='node'),
+				self._traversal_description
+			)
+		]
+			
+
+	@property
 	def relationships(self):
 		"""
 		Returns all C{Relationship}s from this traversal.
@@ -1201,6 +1252,16 @@ class Traverser(rest.Resource):
 				self._template_uri.format(returnType='relationship'),
 				self._traversal_description
 			)
+		]
+
+	@property
+	def relationship_map(self):
+		return [
+			(relationship['start'], relationship['end'])
+			for relationship in self._post(
+				self._template_uri.format(returnType='relationship'),
+				self._traversal_description
+		        )
 		]
 
 
